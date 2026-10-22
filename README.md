@@ -1,6 +1,6 @@
 # Search Agent
 
-An AI agent that answers questions using **live web search**, cites every claim, and checks that each citation points to a real source. Search providers can be swapped, and a benchmark compares them on **latency** and **citation quality**.
+An AI agent that answers questions using **live web search**, cites every claim, and checks that each citation points to a real source. Search providers (Tavily, Brave) and LLMs (Gemini, OpenAI) can be swapped, and a benchmark compares them on **latency** and **citation quality**.
 
 ```
 $ python -m search_agent "When was the James Webb Space Telescope launched?" --verbose
@@ -18,7 +18,7 @@ Latency: <total>s total (<search>s search, <llm>s LLM), grounded=True
 ## How it works
 
 ```
-question ──► LLM (OpenAI tool calling)
+question ──► LLM (Gemini or OpenAI, via OpenAI-style tool calling)
                 │  decides what to search
                 ▼
           web_search tool ──► provider (Tavily | Brave) ──► cache (TTL)
@@ -33,6 +33,7 @@ question ──► LLM (OpenAI tool calling)
 - **Tool calling.** The model gets a single `web_search` tool and decides when and what to search. It can search again with a better query, up to `max_steps`. On the last step it's forced to answer.
 - **Global source numbering.** Results are numbered across all searches, so `[3]` always means the same page.
 - **Citation check.** After the answer comes back, every `[n]` is checked. An answer counts as **grounded** only if it has at least one citation and none of them point to a source that doesn't exist.
+- **Two LLM backends, one code path.** Gemini's OpenAI-compatible endpoint means the same SDK and tool-calling loop run on either model. The backend is picked from whichever API key is set.
 - **Provider interface.** Each search API is a small adapter that returns the same `SearchResult(title, url, snippet)`. Adding a new provider takes about 20 lines.
 - **Reliability.** Retries with exponential backoff on HTTP 429 and 5xx, no retry on 4xx auth errors, and an in-memory TTL cache so repeated queries skip the network.
 
@@ -44,12 +45,14 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # add your keys
 python -m search_agent "What is the Model Context Protocol?" --verbose
+# force a backend: --llm gemini  |  --llm openai
 ```
 
 | Variable | Required | Notes |
 |---|---|---|
-| `OPENAI_API_KEY` | yes | Used for the agent's LLM calls |
-| `OPENAI_MODEL` | no | Defaults to `gpt-4o-mini` |
+| `GEMINI_API_KEY` | one LLM key | Free tier at aistudio.google.com/apikey |
+| `OPENAI_API_KEY` | one LLM key | Used instead of Gemini if set |
+| `LLM_MODEL` | no | Defaults to `gemini-2.5-flash` or `gpt-4o-mini` |
 | `TAVILY_API_KEY` | for `--provider tavily` | Free tier at tavily.com |
 | `BRAVE_API_KEY` | for `--provider brave` | Free tier at brave.com/search/api |
 
@@ -113,7 +116,7 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-15 tests run fully offline, with the LLM and search APIs faked. They cover:
+18 tests run fully offline, with the LLM and search APIs faked. They cover:
 
 - The agent loop: search, answer, and multiple searches with shared numbering
 - Catching made-up citations
@@ -122,6 +125,7 @@ python -m pytest -q
 - Cache hits
 - Response parsing for each provider
 - Retry on 429, no retry on 401, and a clear error when an API key is missing
+- Picking the LLM backend from whichever key is set
 
 CI runs them on every push with GitHub Actions.
 

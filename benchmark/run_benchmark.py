@@ -32,8 +32,9 @@ def pct(xs, p):
     return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
 
 
-def run(provider_name: str, questions: list[str], model: str | None) -> list[dict]:
-    agent = SearchAgent(get_provider(provider_name), model=model)
+def run(provider_name: str, questions: list[str], model: str | None, llm: str | None) -> list[dict]:
+    agent = SearchAgent(get_provider(provider_name), model=model, backend=llm)
+    print(f"Running {provider_name} with {agent.backend}:{agent.model}")
     rows = []
     for i, q in enumerate(questions, 1):
         try:
@@ -81,13 +82,14 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--providers", nargs="+", default=["tavily"])
     p.add_argument("--model", default=None)
+    p.add_argument("--llm", choices=["openai", "gemini"], default=None)
     p.add_argument("--limit", type=int, default=None, help="Only run the first N questions")
     args = p.parse_args()
 
     questions = json.loads((HERE / "questions.json").read_text())[: args.limit]
     all_rows, summary = [], {}
     for name in args.providers:
-        rows = run(name, questions, args.model)
+        rows = run(name, questions, args.model, args.llm)
         all_rows += rows
         summary[name] = summarize(rows)
 

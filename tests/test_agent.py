@@ -202,3 +202,32 @@ def test_missing_api_key_raises(monkeypatch):
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     with pytest.raises(SearchError, match="TAVILY_API_KEY"):
         TavilyProvider()
+
+
+# ---------- LLM backend selection ----------
+
+
+def test_backend_autodetects_gemini(monkeypatch):
+    from search_agent.agent import GEMINI_BASE_URL, make_llm_client
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BACKEND", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    client, backend = make_llm_client()
+    assert backend == "gemini"
+    assert str(client.base_url) == GEMINI_BASE_URL
+
+
+def test_backend_requires_a_key(monkeypatch):
+    from search_agent.agent import make_llm_client
+
+    for v in ("OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_BACKEND"):
+        monkeypatch.delenv(v, raising=False)
+    with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        make_llm_client()
+
+
+def test_default_model_follows_backend(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    agent = SearchAgent(FakeProvider(), client=FakeOpenAI([]), backend="gemini")
+    assert agent.model == "gemini-2.5-flash"

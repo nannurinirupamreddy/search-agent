@@ -46,6 +46,35 @@ SEARCH_TOOL = {
 
 CITATION_RE = re.compile(r"\[(\d+)\]")
 
+# Gemini exposes an OpenAI-compatible endpoint, so the same SDK and
+# tool-calling code works with a free Gemini API key.
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+DEFAULT_MODELS = {"openai": "gpt-4o-mini", "gemini": "gemini-2.5-flash"}
+
+
+def make_llm_client(backend: str | None = None) -> tuple[OpenAI, str]:
+    """Pick the LLM backend. Returns (client, backend name).
+
+    backend: "openai", "gemini", or None to auto-detect from env vars
+    (OPENAI_API_KEY first, then GEMINI_API_KEY).
+    """
+    backend = backend or os.environ.get("LLM_BACKEND")
+    if backend is None:
+        if os.environ.get("OPENAI_API_KEY"):
+            backend = "openai"
+        elif os.environ.get("GEMINI_API_KEY"):
+            backend = "gemini"
+        else:
+            raise RuntimeError("Set OPENAI_API_KEY or GEMINI_API_KEY (see .env.example)")
+    if backend == "gemini":
+        key = os.environ.get("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError("Set GEMINI_API_KEY to use the Gemini backend")
+        return OpenAI(api_key=key, base_url=GEMINI_BASE_URL), "gemini"
+    if backend == "openai":
+        return OpenAI(), "openai"
+    raise RuntimeError(f"Unknown LLM backend {backend!r}; use 'openai' or 'gemini'")
+
 
 @dataclass
 class Answer:
@@ -88,10 +117,14 @@ class SearchAgent:
         model: str | None = None,
         max_steps: int = 4,
         results_per_search: int = 5,
+        backend: str | None = None,
     ):
         self.provider = provider
-        self.client = client or OpenAI()
-        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        if client is None:
+            client, backend = make_llm_client(backend)
+        self.client = client
+        self.backend = backend or "openai"
+        self.model = model or os.environ.get("LLM_MODEL") or DEFAULT_MODELS.get(self.backend, "gpt-4o-mini")
         self.max_steps = max_steps
         self.results_per_search = results_per_search
 
